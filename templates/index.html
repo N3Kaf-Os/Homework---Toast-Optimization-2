@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Toast Optimizer</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    /* ── Reset & base ───────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3a;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --exhaustive: #3b82f6;
+      --hill:       #f97316;
+      --gradient:   #22c55e;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+    h2 { font-size: 0.95rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .header span { font-size: 1.8rem; }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+
+    /* ── Buttons ────────────────────────────────────────────── */
+    .algo-btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 2px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .algo-btn:hover { border-color: currentColor; color: var(--text); }
+    .algo-btn.active[data-algo="exhaustive_search"] { border-color: var(--exhaustive); color: var(--exhaustive); background: rgba(59,130,246,0.1); }
+    .algo-btn.active[data-algo="hill_climbing"]      { border-color: var(--hill);       color: var(--hill);       background: rgba(249,115,22,0.1); }
+    .algo-btn.active[data-algo="gradient_ascent"]    { border-color: var(--gradient);   color: var(--gradient);   background: rgba(34,197,94,0.1); }
+
+    .run-btn {
+      padding: 8px 22px;
+      border-radius: 8px;
+      border: none;
+      background: #6366f1;
+      color: #fff;
+      font-size: 0.875rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-left: auto;
+    }
+    .run-btn:hover:not(:disabled) { background: #4f46e5; }
+    .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Result bar ─────────────────────────────────────────── */
+    #result-bar {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 28px;
+      align-items: center;
+      flex-wrap: wrap;
+      min-height: 46px;
+    }
+
+    .stat { display: flex; flex-direction: column; gap: 2px; }
+    .stat-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .stat-value { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .status-msg { font-size: 0.85rem; color: var(--muted); margin-left: auto; }
+
+    /* ── Session history table ──────────────────────────────── */
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .clear-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .clear-btn:hover { color: #ef4444; border-color: #ef4444; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.83rem;
+    }
+    thead th {
+      text-align: left;
+      padding: 8px 12px;
+      color: var(--muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.03); }
+    tbody td { padding: 9px 12px; font-variant-numeric: tabular-nums; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .badge-exhaustive { background: rgba(59,130,246,0.15); color: var(--exhaustive); }
+    .badge-hill       { background: rgba(249,115,22,0.15);  color: var(--hill); }
+    .badge-gradient   { background: rgba(34,197,94,0.15);   color: var(--gradient); }
+
+    .empty-msg { color: var(--muted); font-size: 0.85rem; padding: 12px 0; }
+
+    /* ── Plotly dark overrides ───────────────────────────────── */
+    .js-plotly-plot .plotly .bg { fill: transparent !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <span>🍞</span>
+    <h1>Toast Optimizer</h1>
+  </div>
+
+  <!-- Algorithm picker + Run button -->
+  <div class="controls">
+    <button class="algo-btn active" data-algo="exhaustive_search">Exhaustive Search</button>
+    <button class="algo-btn"        data-algo="hill_climbing">Hill Climbing</button>
+    <button class="algo-btn"        data-algo="gradient_ascent">Gradient Ascent</button>
+    <button class="run-btn" id="run-btn">▶ Run</button>
+  </div>
+
+  <!-- Live result stats -->
+  <div id="result-bar">
+    <span class="status-msg" id="status-msg">Pick an algorithm and hit Run.</span>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-row">
+    <div class="card">
+      <div class="card-title">Convergence — best score over time</div>
+      <div id="chart-convergence" style="height:340px;"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Search space heatmap + path taken</div>
+      <div id="chart-heatmap" style="height:340px;"></div>
+    </div>
+  </div>
+
+  <!-- Session history -->
+  <div class="card">
+    <div class="history-header">
+      <h2>Session History</h2>
+      <button class="clear-btn" id="clear-btn">Clear history</button>
+    </div>
+    <div id="history-container"></div>
+  </div>
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'toast_optimizer_history_v1';
+const MAX_HISTORY = 20;
+
+// Colors matching the CSS variables
+const ALGO_COLORS = {
+  exhaustive_search: '#3b82f6',
+  hill_climbing:     '#f97316',
+  gradient_ascent:   '#22c55e',
+};
+
+const ALGO_LABELS = {
+  exhaustive_search: 'Exhaustive Search',
+  hill_climbing:     'Hill Climbing',
+  gradient_ascent:   'Gradient Ascent',
+};
+
+const BADGE_CLASS = {
+  exhaustive_search: 'badge-exhaustive',
+  hill_climbing:     'badge-hill',
+  gradient_ascent:   'badge-gradient',
+};
+
+// ─── State ────────────────────────────────────────────────────────────────────
+
+let selectedAlgo = 'exhaustive_search';
+let heatmapGrid  = null;   // the 100×100 grid fetched once from the server
+let isRunning    = false;
+
+// ─── localStorage helpers ─────────────────────────────────────────────────────
+
+// Load all past runs from localStorage
+function loadHistory() {
+  return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+}
+
+// Save a new run; keep only the newest MAX_HISTORY entries
+function saveRun(run) {
+  const history = loadHistory();
+  history.push({ id: Date.now(), timestamp: new Date().toISOString(), ...run });
+  if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+}
+
+// ─── Algorithm selector ───────────────────────────────────────────────────────
+
+document.querySelectorAll('.algo-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedAlgo = btn.dataset.algo;
+    // Redraw convergence chart to show history for the newly selected algorithm
+    drawConvergenceChart(null);
+  });
+});
+
+// ─── Run button ───────────────────────────────────────────────────────────────
+
+document.getElementById('run-btn').addEventListener('click', async () => {
+  if (isRunning) return;
+  isRunning = true;
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  setStatus('Running ' + ALGO_LABELS[selectedAlgo] + '…');
+
+  try {
+    const res  = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ algorithm: selectedAlgo }),
+    });
+    const data = await res.json();
+
+    // Show result stats
+    showResult(data);
+
+    // Save to localStorage for session history
+    saveRun(data);
+
+    // Redraw both charts
+    drawConvergenceChart(data);
+    drawHeatmapChart(data);
+
+    // Refresh the history table
+    renderHistoryTable();
+
+  } catch (err) {
+    setStatus('Error: ' + err.message);
+  } finally {
+    isRunning = false;
+    btn.disabled = false;
+    btn.textContent = '▶ Run';
+  }
+});
+
+// ─── Result bar ───────────────────────────────────────────────────────────────
+
+function showResult(data) {
+  const r   = data.result;
+  const bar = document.getElementById('result-bar');
+  const color = ALGO_COLORS[data.algorithm];
+
+  // Build the stat chips — gradient_ascent also has a `power` value
+  let statsHTML = `
+    <div class="stat">
+      <span class="stat-label">Algorithm</span>
+      <span class="stat-value" style="color:${color}">${ALGO_LABELS[data.algorithm]}</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Toast duration</span>
+      <span class="stat-value">${r.toast}s</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Wait duration</span>
+      <span class="stat-value">${r.wait}s</span>
+    </div>`;
+
+  if (r.power !== undefined) {
+    statsHTML += `
+    <div class="stat">
+      <span class="stat-label">Power</span>
+      <span class="stat-value">${r.power}</span>
+    </div>`;
+  }
+
+  statsHTML += `
+    <div class="stat">
+      <span class="stat-label">Best utility</span>
+      <span class="stat-value" style="color:${color}">${r.utility}</span>
+    </div>`;
+
+  if (data.total_calls !== undefined) {
+    statsHTML += `
+    <div class="stat">
+      <span class="stat-label">Utility calls</span>
+      <span class="stat-value">${data.total_calls.toLocaleString()}</span>
+    </div>`;
+  }
+
+  bar.innerHTML = statsHTML;
+}
+
+function setStatus(msg) {
+  // Used only while running (before results arrive)
+  const bar = document.getElementById('result-bar');
+  if (!bar.querySelector('.stat')) {
+    // Don't overwrite existing result stats
+    bar.innerHTML = `<span class="status-msg" id="status-msg">${msg}</span>`;
+  }
+}
+
+// ─── Convergence chart ────────────────────────────────────────────────────────
+// Shows how the best utility improved over time.
+// Past runs (same algorithm) are shown as faded lines for comparison.
+// The freshest run is drawn on top, fully opaque.
+
+function drawConvergenceChart(latestRun) {
+  const history = loadHistory().filter(r => r.algorithm === selectedAlgo);
+  const traces  = [];
+
+  const color = ALGO_COLORS[selectedAlgo];
+
+  // ── Old runs as faded gray lines (behind the fresh one) ──
+  history.forEach((run, i) => {
+    // Skip the very latest run — we'll draw it separately in full color
+    const isLatest = latestRun && run.id === latestRun.id;
+    if (isLatest) return;
+
+    traces.push({
+      x: run.convergence.map(p => p.x),
+      y: run.convergence.map(p => p.y),
+      mode: 'lines',
+      line: { color: '#4a5568', width: 1 },
+      opacity: 0.4,
+      showlegend: false,
+      hovertemplate: 'call %{x}<br>utility %{y}<extra>past run</extra>',
+    });
+  });
+
+  // ── Fresh run as a bold colored line ──
+  const fresh = latestRun || (history.length ? history[history.length - 1] : null);
+  if (fresh) {
+    traces.push({
+      x: fresh.convergence.map(p => p.x),
+      y: fresh.convergence.map(p => p.y),
+      mode: 'lines+markers',
+      line:    { color, width: 2.5 },
+      marker:  { color, size: 5 },
+      opacity: 1,
+      name: ALGO_LABELS[selectedAlgo],
+      hovertemplate: 'call %{x}<br>utility %{y}<extra></extra>',
+    });
+  }
+
+  const xLabel = selectedAlgo === 'exhaustive_search' ? 'Utility function calls' : 'Steps';
+
+  const layout = {
+    paper_bgcolor: 'transparent',
+    plot_bgcolor:  'transparent',
+    font:  { color: '#94a3b8', size: 11 },
+    margin: { t: 10, r: 16, b: 48, l: 52 },
+    xaxis: {
+      title: { text: xLabel, standoff: 10 },
+      gridcolor: '#1e2535',
+      zerolinecolor: '#2a2d3a',
+      color: '#64748b',
+    },
+    yaxis: {
+      title: { text: 'Best utility', standoff: 10 },
+      gridcolor: '#1e2535',
+      zerolinecolor: '#2a2d3a',
+      color: '#64748b',
+    },
+    showlegend: false,
+  };
+
+  Plotly.react('chart-convergence', traces, layout, { responsive: true, displayModeBar: false });
+}
+
+// ─── Heatmap chart ────────────────────────────────────────────────────────────
+// Background: the full 100×100 utility grid (preloaded from server).
+// Overlay:    the path the algorithm walked through the (toast, wait) space.
+
+async function drawHeatmapChart(latestRun) {
+  // Fetch the background grid the first time, then reuse the cached copy
+  if (!heatmapGrid) {
+    heatmapGrid = await fetch('/api/heatmap').then(r => r.json());
+  }
+
+  const traces = [];
+
+  // ── Background heatmap — one square per (toast, wait) combo ──
+  // x = toast_duration axis, y = wait_duration axis, z = utility score
+  // colorscale goes red (low) → yellow → green (high)
+  traces.push({
+    type: 'heatmap',
+    z: heatmapGrid,
+    x: Array.from({ length: 100 }, (_, i) => i + 1),   // 1..100
+    y: Array.from({ length: 100 }, (_, i) => i + 1),   // 1..100
+    colorscale: 'RdYlGn',
+    showscale: true,
+    colorbar: {
+      title: { text: 'Utility', side: 'right' },
+      tickfont: { color: '#94a3b8', size: 10 },
+      titlefont: { color: '#94a3b8', size: 11 },
+      len: 0.8,
+    },
+    hovertemplate: 'toast=%{x}s  wait=%{y}s<br>utility=%{z}<extra></extra>',
+  });
+
+  // ── Path overlay — shows where the algorithm went ──
+  if (latestRun && latestRun.path) {
+    const { toast: pts, wait: pwt } = latestRun.path;
+    const color = ALGO_COLORS[latestRun.algorithm];
+
+    if (pts.length > 1) {
+      // Draw the walking path as a line
+      traces.push({
+        type: 'scatter',
+        x: pts,
+        y: pwt,
+        mode: 'lines+markers',
+        line:   { color, width: 2 },
+        marker: { color, size: 6, symbol: 'circle' },
+        name: 'Path',
+        hovertemplate: 'toast=%{x}s  wait=%{y}s<extra>path</extra>',
+      });
+
+      // Mark the start with a diamond
+      traces.push({
+        type: 'scatter',
+        x: [pts[0]], y: [pwt[0]],
+        mode: 'markers',
+        marker: { color: '#facc15', size: 12, symbol: 'diamond', line: { color: '#000', width: 1 } },
+        name: 'Start',
+        hovertemplate: 'Start: toast=%{x}s  wait=%{y}s<extra></extra>',
+      });
+    }
+
+    // Mark the best point with a star
+    traces.push({
+      type: 'scatter',
+      x: [pts[pts.length - 1]],
+      y: [pwt[pwt.length - 1]],
+      mode: 'markers',
+      marker: { color: '#fff', size: 14, symbol: 'star', line: { color: color, width: 2 } },
+      name: 'Best',
+      hovertemplate: 'Best: toast=%{x}s  wait=%{y}s<extra></extra>',
+    });
+  }
+
+  const layout = {
+    paper_bgcolor: 'transparent',
+    plot_bgcolor:  'transparent',
+    font:   { color: '#94a3b8', size: 11 },
+    margin: { t: 10, r: 70, b: 48, l: 52 },
+    xaxis: {
+      title: { text: 'Toast duration (s)', standoff: 10 },
+      gridcolor: 'transparent',
+      color: '#64748b',
+    },
+    yaxis: {
+      title: { text: 'Wait duration (s)', standoff: 10 },
+      gridcolor: 'transparent',
+      color: '#64748b',
+    },
+    showlegend: false,
+  };
+
+  Plotly.react('chart-heatmap', traces, layout, { responsive: true, displayModeBar: false });
+}
+
+// ─── Session history table ────────────────────────────────────────────────────
+
+function renderHistoryTable() {
+  const history = loadHistory().slice().reverse();   // newest first
+  const container = document.getElementById('history-container');
+
+  if (history.length === 0) {
+    container.innerHTML = '<p class="empty-msg">No runs yet — hit Run to get started.</p>';
+    return;
+  }
+
+  const rows = history.map(run => {
+    const r    = run.result;
+    const time = new Date(run.timestamp).toLocaleTimeString();
+    const algo = run.algorithm;
+    const powerCell = r.power !== undefined ? r.power : '—';
+
+    return `<tr>
+      <td>${time}</td>
+      <td><span class="badge ${BADGE_CLASS[algo]}">${ALGO_LABELS[algo]}</span></td>
+      <td>${r.toast}s</td>
+      <td>${r.wait}s</td>
+      <td>${powerCell}</td>
+      <td><strong>${r.utility}</strong></td>
+      <td>${run.total_calls !== undefined ? run.total_calls.toLocaleString() : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Algorithm</th>
+          <th>Toast</th>
+          <th>Wait</th>
+          <th>Power</th>
+          <th>Utility</th>
+          <th>Calls</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ─── Clear history ────────────────────────────────────────────────────────────
+
+document.getElementById('clear-btn').addEventListener('click', () => {
+  localStorage.removeItem(STORAGE_KEY);
+  renderHistoryTable();
+  drawConvergenceChart(null);
+});
+
+// ─── Boot sequence ────────────────────────────────────────────────────────────
+// On page load: draw empty charts, render any history from a previous session,
+// and kick off the heatmap background fetch so it's ready before the first run.
+
+(async function init() {
+  // Draw placeholder charts immediately so the layout doesn't jump
+  drawConvergenceChart(null);
+  drawHeatmapChart(null);
+
+  // Render whatever the user had in localStorage from before
+  renderHistoryTable();
+
+  // Pre-fetch the heatmap in the background so the first Run feels instant
+  heatmapGrid = await fetch('/api/heatmap').then(r => r.json()).catch(() => null);
+
+  // If there's a previous run in history, redraw the heatmap with it
+  const history = loadHistory();
+  if (history.length > 0) {
+    const last = history[history.length - 1];
+    selectedAlgo = last.algorithm;
+    document.querySelectorAll('.algo-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.algo === selectedAlgo);
+    });
+    drawConvergenceChart(last);
+    drawHeatmapChart(last);
+    showResult(last);
+  }
+})();
+</script>
+</body>
+</html>
